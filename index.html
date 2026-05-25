@@ -133,8 +133,10 @@ const APIKEY_KEY = "vegas_council_apikey";
 const MODEL = "claude-sonnet-4-6";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const BATCH_SIZE = 2;
-const MAX_RETRIES = 3;
+// Plano com limite de 5 requisições/minuto: enviamos 4 por vez (margem) e aguardamos a janela
+const BATCH_SIZE = 4;
+const BATCH_WAIT_MS = 65000; // ~65s entre lotes para respeitar o limite por minuto
+const MAX_RETRIES = 4;
 
 function parseSections(text, labels) {
   if (!text) return null;
@@ -195,16 +197,30 @@ async function callClaude(apiKey, systemPrompt, userContent) {
   let lastErr;
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try { return await callClaudeOnce(apiKey, systemPrompt, userContent); }
-    catch (e) { lastErr = e; await sleep(800 * (attempt + 1) + Math.random() * 600); }
+    catch (e) {
+      lastErr = e;
+      const is429 = e && e.message && e.message.indexOf("429") !== -1;
+      // Se for limite por minuto (429), espera a janela reabrir (~60s). Senão, backoff curto.
+      if (is429) await sleep(60000 + Math.random() * 3000);
+      else await sleep(800 * (attempt + 1) + Math.random() * 600);
+    }
   }
   throw lastErr;
 }
 
-async function runInBatches(items, size, worker) {
+async function runInBatches(items, size, worker, onProgress) {
+  let done = 0;
   for (let i = 0; i < items.length; i += size) {
     const slice = items.slice(i, i + size);
-    await Promise.all(slice.map(worker));
-    if (i + size < items.length) await sleep(400);
+    await Promise.all(slice.map(async (it) => { await worker(it); done++; if (onProgress) onProgress(done, items.length, 0); }));
+    // Aguarda a janela de 1 minuto reabrir, exceto após o último lote
+    if (i + size < items.length) {
+      const waitS = Math.round(BATCH_WAIT_MS / 1000);
+      for (let s = waitS; s > 0; s--) {
+        if (onProgress) onProgress(done, items.length, s);
+        await sleep(1000);
+      }
+    }
   }
 }
 
@@ -262,6 +278,7 @@ function App() {
   const [history, setHistory] = useState([]);
   const [currentId, setCurrentId] = useState(null);
   const [savedNote, setSavedNote] = useState("");
+  const [progress, setProgress] = useState(null); // {done, total, wait}
 
   useEffect(() => {
     try {
@@ -331,7 +348,9 @@ function App() {
     const initial = {}; ADVISORS.forEach((a) => (initial[a.id] = { status: "loading" })); setResponses(initial);
     const userContent = buildPautaBlock() + "\n\n" + ADVISOR_FORMAT;
     const collected = {};
-    await runInBatches(ADVISORS, BATCH_SIZE, (a) => queryAdvisor(a, userContent, collected));
+    setProgress({ done: 0, total: ADVISORS.length, wait: 0 });
+    await runInBatches(ADVISORS, BATCH_SIZE, (a) => queryAdvisor(a, userContent, collected), (done, total, wait) => setProgress({ done, total, wait }));
+    setProgress(null);
     await runPresident(collected);
     setRunning(false);
   };
@@ -344,7 +363,9 @@ function App() {
     const collected = {};
     ADVISORS.forEach((a) => { const r = responses[a.id]; if (r && r.status === "done") collected[a.id] = { text: r.text, vote: r.vote }; });
     const userContent = buildPautaBlock() + "\n\n" + ADVISOR_FORMAT;
-    await runInBatches(failed, BATCH_SIZE, (a) => queryAdvisor(a, userContent, collected));
+    setProgress({ done: 0, total: failed.length, wait: 0 });
+    await runInBatches(failed, BATCH_SIZE, (a) => queryAdvisor(a, userContent, collected), (done, total, wait) => setProgress({ done, total, wait }));
+    setProgress(null);
     await runPresident(collected);
     setRunning(false);
   };
@@ -369,6 +390,11 @@ function App() {
 
   return (
     <div className="cn-root">
+      {progress && (
+        <div className="cn-topbar" role="progressbar" aria-valuenow={Math.round((progress.done / progress.total) * 100)} aria-valuemin={0} aria-valuemax={100}>
+          <div className="cn-topbar-fill" style={{ width: ((progress.done / progress.total) * 100) + "%" }} />
+        </div>
+      )}
       <div className="cn-app">
         <header className="cn-header">
           <div className="cn-rule" />
@@ -420,6 +446,16 @@ function App() {
                 {!apiKey.trim() && <span className="cn-warn">Configure a chave da API acima para convocar.</span>}
               </div>
             </section>
+
+            {progress && (
+              <div className="cn-progress">
+                <div className="cn-progress-bar"><div style={{ width: ((progress.done / progress.total) * 100) + "%" }} /></div>
+                <p className="cn-progress-txt">
+                  {progress.done} de {progress.total} conselheiros consultados
+                  {progress.wait > 0 ? " · aguardando " + progress.wait + "s para respeitar o limite de 5/min…" : " · consultando…"}
+                </p>
+              </div>
+            )}
 
             {convened && (
               <React.Fragment>
@@ -549,6 +585,13 @@ ReactDOM.createRoot(document.getElementById("root")).render(<App />);
 .cn-btn-danger{color:#c46b6b;border-color:rgba(196,107,107,0.4);background:transparent;box-shadow:none;}
 .cn-saved{color:var(--gold-bright);font-size:13px;font-style:italic;}
 .cn-warn{color:#c98b8b;font-size:13px;font-style:italic;}
+.cn-progress{max-width:940px;margin:0 auto 30px;background:linear-gradient(180deg,rgba(22,22,29,0.85),rgba(16,16,22,0.85));border:1px solid var(--line);border-radius:13px;padding:18px 24px;}
+.cn-topbar{position:fixed;top:0;left:0;right:0;height:3px;background:rgba(201,162,75,0.12);z-index:9999;}
+.cn-topbar-fill{height:100%;background:linear-gradient(90deg,var(--gold),var(--gold-bright));box-shadow:0 0 10px rgba(201,162,75,0.6),0 0 4px rgba(230,200,120,0.8);transition:width 0.5s ease;animation:cn-topglow 1.8s ease-in-out infinite;}
+@keyframes cn-topglow{0%,100%{opacity:0.85;}50%{opacity:1;}}
+.cn-progress-bar{height:8px;border-radius:5px;overflow:hidden;background:rgba(0,0,0,0.4);margin-bottom:10px;}
+.cn-progress-bar div{height:100%;background:linear-gradient(90deg,var(--gold),var(--gold-bright));transition:width 0.4s ease;}
+.cn-progress-txt{margin:0;font-size:13px;color:var(--gold-bright);text-align:center;font-style:italic;}
 .cn-scoreboard{max-width:940px;margin:0 auto 30px;background:linear-gradient(180deg,rgba(22,22,29,0.85),rgba(16,16,22,0.85));border:1px solid var(--line);border-radius:13px;padding:20px 26px;}
 .cn-score-nums{display:flex;justify-content:center;gap:48px;margin-bottom:16px;}
 .cn-score-item{text-align:center;display:flex;flex-direction:column;}
