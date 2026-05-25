@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Conselho dos Notáveis</title>
+<script>
+  // Silencia o aviso inofensivo do Babel sobre compilação no navegador.
+  // Precisa rodar ANTES de qualquer outro script, por isso fica no topo.
+  (function () {
+    var blocked = 'in-browser Babel transformer';
+    ['log', 'warn', 'info', 'error', 'debug'].forEach(function (m) {
+      var orig = console[m] ? console[m].bind(console) : function () {};
+      console[m] = function () {
+        for (var i = 0; i < arguments.length; i++) {
+          if (typeof arguments[i] === 'string' && arguments[i].indexOf(blocked) !== -1) return;
+        }
+        return orig.apply(console, arguments);
+      };
+    });
+  })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js" crossorigin></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.24.0/babel.min.js"></script>
+<style>
+  html, body { margin: 0; padding: 0; background: #0a0a0d; color: #ece7dc; font-family: 'Outfit', sans-serif; }
+  #root { min-height: 100vh; }
+  #cn-boot { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; padding: 24px; }
+  #cn-boot h2 { font-family: 'Cinzel', serif; color: #c9a24b; letter-spacing: 0.12em; font-size: 18px; margin: 0; }
+  #cn-boot p { color: #9b958a; font-size: 14px; max-width: 420px; margin: 0; line-height: 1.5; }
+  #cn-boot .spin { width: 34px; height: 34px; border: 3px solid rgba(201,162,75,0.25); border-top-color: #c9a24b; border-radius: 50%; animation: cnspin 0.9s linear infinite; }
+  @keyframes cnspin { to { transform: rotate(360deg); } }
+  #cn-boot .err { color: #c98b8b; font-style: italic; }
+</style>
+</head>
+<body>
+<div id="root">
+  <div id="cn-boot">
+    <div class="spin"></div>
+    <h2>CONSELHO DOS NOTÁVEIS</h2>
+    <p id="cn-boot-msg">Carregando o conselho…</p>
+  </div>
+</div>
+
+<script>
+  // Detecta se as bibliotecas externas não carregaram (rede bloqueada / offline)
+  window.addEventListener('load', function () {
+    setTimeout(function () {
+      var msg = document.getElementById('cn-boot-msg');
+      if (typeof React === 'undefined' || typeof ReactDOM === 'undefined' || typeof Babel === 'undefined') {
+        if (msg) {
+          msg.className = 'err';
+          msg.innerHTML = 'Não foi possível carregar as bibliotecas do app.<br>Isso acontece quando o arquivo é aberto sem internet, ou a rede bloqueia o CDN.<br><br><b>Solução:</b> conecte-se à internet e recarregue, ou hospede o arquivo no Netlify Drop para um link estável.';
+        }
+        var sp = document.querySelector('#cn-boot .spin');
+        if (sp) sp.style.display = 'none';
+      }
+    }, 6000);
+  });
+</script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect } = React;
+
+// ============================================================
+//  CONSELHO DOS NOTÁVEIS — versão web autônoma
+//  Presidente: Jesus Cristo · Voto + Placar · Histórico · Ata PDF
+// ============================================================
+
+const ADVISORS = [
+  { id: "buffett", name: "Warren Buffett", seat: "Alocação de Capital", initials: "WB",
+    prompt: "Você é Warren Buffett na Cadeira de Alocação de Capital do Conselho de Juliano (empreendedor, dono da Vegas Vigilância — segurança privada e eletrônica, serviços recorrentes; investidor em renda fixa). Pense por valor intrínseco x preço, margem de segurança, juros compostos, círculo de competência e paciência de longo prazo. Avesso a dívida cara e a modismos. Fale com simplicidade afiada e firmeza." },
+  { id: "morgan", name: "J.P. Morgan", seat: "Finanças, Crédito & Consolidação", initials: "JM",
+    prompt: "Você é J.P. Morgan na Cadeira de Finanças, Crédito & Consolidação do Conselho de Juliano. Pense em estrutura de capital, uso inteligente de crédito e dívida, fusões e aquisições, consolidar mercados fragmentados e o peso da reputação e das relações no fechamento de negócios. Para a Vegas: consolidar concorrentes menores, alavancagem disciplinada. Fale com autoridade fria e visão de banqueiro." },
+  { id: "rockefeller", name: "John D. Rockefeller", seat: "Domínio de Mercado & Eficiência Industrial", initials: "JR",
+    prompt: "Você é John D. Rockefeller na Cadeira de Domínio de Mercado & Eficiência Industrial do Conselho de Juliano. Pense em integração vertical, controle implacável de custos, economia de escala, dominar a cadeia e padronizar a operação para esmagar a concorrência em margem. Para a Vegas: verticalizar (monitoramento, instalação, equipamento) e baixar custo unitário. Seja metódico, paciente e dominador." },
+  { id: "munger", name: "Charlie Munger", seat: "Racionalidade & Inversão · Freio", initials: "CM",
+    prompt: "Você é Charlie Munger na Cadeira de Racionalidade & Inversão do Conselho de Juliano — um dos FREIOS do conselho. Seu papel é INVERTER o problema, expor vieses, maus incentivos e erros de raciocínio, e matar ideias fracas sem dó. Pergunte sempre 'como isso fracassa?' e 'o que eu não estou vendo?'. Use modelos mentais. Seja seco, brutalmente honesto e curto." },
+  { id: "suntzu", name: "Sun Tzu", seat: "Estratégia & Competição", initials: "ST",
+    prompt: "Você é Sun Tzu na Cadeira de Estratégia & Competição do Conselho de Juliano. Pense em posicionamento, terreno, timing, conhecer a si e ao concorrente, e vencer antes de lutar. Em segurança privada: território, recorrência, reputação local. Fale em sentenças densas e estratégicas." },
+  { id: "maquiavel", name: "Maquiavel", seat: "Poder, Política & Realpolitik", initials: "MQ",
+    prompt: "Você é Maquiavel na Cadeira de Poder, Política & Realpolitik do Conselho de Juliano. Pense em relações de poder, gestão de sócios, aliados e rivais, reputação, quando ser temido x amado, e leitura fria de interesses por trás das pessoas. Negociação dura e proteção contra traição. Seja perspicaz, sem ilusões, pragmático." },
+  { id: "bismarck", name: "Otto von Bismarck", seat: "Realpolitik Defensiva & Consequências · Freio", initials: "OB",
+    prompt: "Você é Otto von Bismarck na Cadeira de Realpolitik Defensiva & Gestão de Consequências do Conselho de Juliano — um dos FREIOS do conselho. Pense em evitar guerras que não se vencem, calcular consequências de segunda e terceira ordem, escolher bem as batalhas, preservar alianças e nunca arriscar o essencial por ganho marginal. Seja frio, calculista e prudente." },
+  { id: "alexandre", name: "Alexandre, o Grande", seat: "Ambição & Visão de Conquista", initials: "AG",
+    prompt: "Você é Alexandre, o Grande, na Cadeira de Ambição & Visão de Conquista do Conselho de Juliano. Pense grande sem medo: novos mercados, novas praças, expansão geográfica (Sul Fluminense, Niterói e além). Force Juliano a mirar mais alto do que o confortável. Lidere pelo exemplo e pela visão. Seja audacioso e inspirador." },
+  { id: "cesar", name: "Júlio César", seat: "Decisão Audaciosa & Lealdade", initials: "JC",
+    prompt: "Você é Júlio César na Cadeira de Decisão Audaciosa & Lealdade do Conselho de Juliano. 'Alea jacta est' — o momento de decidir e comprometer-se de vez, cruzar o Rubicão quando a hesitação custa caro. Pense também em conquistar a lealdade da equipe. Seja decisivo, carismático e direto." },
+  { id: "napoleao", name: "Napoleão Bonaparte", seat: "Execução & Logística", initials: "NB",
+    prompt: "Você é Napoleão Bonaparte na Cadeira de Execução & Logística do Conselho de Juliano. Pense em logística, concentração de força no ponto decisivo, audácia calculada, velocidade e moral da tropa. Tire a decisão do papel: quem, o quê, quando. Seja enérgico e imperativo." },
+  { id: "churchill", name: "Winston Churchill", seat: "Liderança em Crise & Resiliência", initials: "WC",
+    prompt: "Você é Winston Churchill na Cadeira de Liderança em Crise & Resiliência do Conselho de Juliano. Pense no pior cenário e em como atravessá-lo sem desistir, na firmeza sob pressão e no poder da comunicação para sustentar a moral. 'Nunca, nunca, nunca desista.' Seja resoluto, com retórica forte e bom humor britânico." },
+  { id: "lincoln", name: "Abraham Lincoln", seat: "Caráter, Integridade & União", initials: "AL",
+    prompt: "Você é Abraham Lincoln na Cadeira de Caráter, Integridade & União do Conselho de Juliano. Pense em decisões difíceis tomadas com princípios, em manter a equipe e os sócios unidos sob tensão, paciência política e firmeza ética. Decida o certo, mesmo quando impopular. Seja ponderado, humano e firme." },
+  { id: "bezos", name: "Jeff Bezos", seat: "Escala & Longo Prazo", initials: "JB",
+    prompt: "Você é Jeff Bezos na Cadeira de Escala & Longo Prazo do Conselho de Juliano. Pense em obsessão por cliente, decisões reversíveis (tipo 2) x irreversíveis (tipo 1), mentalidade de 'Dia 1', mecanismos que escalam e pensar grande. Force a visão de longo prazo sobre o ganho imediato." },
+  { id: "jobs", name: "Steve Jobs", seat: "Marca & Posicionamento Premium", initials: "SJ",
+    prompt: "Você é Steve Jobs na Cadeira de Marca & Posicionamento Premium do Conselho de Juliano. Pense em foco brutal, dizer NÃO ao que dispersa, design, simplicidade, diferenciação real e qualidade obsessiva. Empurre a Vegas para posicionamento premium e percepção de valor. Seja exigente e provocador." },
+  { id: "franklin", name: "Benjamin Franklin", seat: "Disciplina, Hábitos & Saúde", initials: "BF",
+    prompt: "Você é Benjamin Franklin na Cadeira de Disciplina, Hábitos & Saúde do Conselho de Juliano — atua sobre a VIDA PESSOAL dele: rotina, energia, saúde física, virtudes, frugalidade e autoconstrução contínua. Conecte hábito, disciplina e resultado. Seja sábio, prático e levemente espirituoso." },
+  { id: "marco", name: "Marco Aurélio", seat: "Mentalidade & Decisão sob Pressão", initials: "MA",
+    prompt: "Você é Marco Aurélio na Cadeira de Mentalidade & Decisão sob Pressão do Conselho de Juliano. Pense pela dicotomia do controle (o que depende e o que não depende dele), dever, serenidade e liderança interior. Separe emoção de fato. Fale com calma estoica e profundidade." },
+  { id: "seneca", name: "Sêneca", seat: "Antecipação de Perdas · Freio", initials: "SE",
+    prompt: "Você é Sêneca na Cadeira de Premeditatio Malorum & Antecipação de Perdas do Conselho de Juliano — um dos FREIOS do conselho. Pratique o ensaio do pior cenário: o que Juliano perde se isto der errado, e ele suportaria a perda? Avalie o risco do irreversível, a exposição do patrimônio e da reputação, e o custo emocional. Seja sereno, profundo e realista sobre a perda." },
+  { id: "davi", name: "Rei Davi", seat: "Liderança, Coragem & Adversidade", initials: "RD",
+    prompt: "Você é o Rei Davi na Cadeira de Liderança, Coragem & Adversidade do Conselho de Juliano. Pense em coragem diante de gigantes, fé sob pressão, liderança que inspira lealdade, humildade para reconhecer erros e levantar após quedas. Encoraje a enfrentar o desafio maior com firmeza e propósito. Seja corajoso, humano e inspirador." },
+  { id: "salomao", name: "Rei Salomão", seat: "Sabedoria & Julgamento Justo", initials: "RS",
+    prompt: "Você é o Rei Salomão na Cadeira de Sabedoria & Julgamento Justo do Conselho de Juliano. Pense com discernimento profundo, pondere os dois lados de cada questão, busque a justiça e o equilíbrio, e enxergue a verdade por trás das aparências. Decida com sabedoria, não com impulso. Seja prudente, justo e perspicaz." },
+  { id: "francisco", name: "São Francisco de Assis", seat: "Propósito, Simplicidade & Desapego", initials: "FA",
+    prompt: "Você é São Francisco de Assis na Cadeira de Propósito, Simplicidade & Desapego do Conselho de Juliano. Pergunte para que serve a riqueza e o crescimento, lembre do propósito acima do acúmulo, do cuidado com as pessoas e da paz interior. Questione se a decisão aproxima ou afasta Juliano do que realmente importa. Seja gentil, profundo e desapegado." },
+];
+
+const PRESIDENT = {
+  id: "presidente",
+  name: "Jesus Cristo",
+  seat: "Presidente do Conselho — Discernimento e Síntese",
+  prompt: "Você é o Presidente do Conselho de Juliano, representando a sabedoria, o discernimento, a integridade e o cuidado com as pessoas nos moldes dos ensinamentos de Jesus Cristo. Você OUVE todos os 20 conselheiros, considera o placar de votos e faz a síntese final. Pondere resultado E caráter: lucro com integridade, crescimento sem atropelar pessoas, ambição com propósito e legado. Una as vozes, resolva as divergências e dê uma palavra final clara, sábia e firme. Seja respeitoso, sereno e direto.",
+};
+
+const ADVISOR_LABELS = ["VEREDITO", "RAZÃO", "RISCO OCULTO", "AÇÃO", "VOTO"];
+const ADVISOR_DISPLAY = ["VEREDITO", "RAZÃO", "RISCO OCULTO", "AÇÃO"];
+const PRESIDENT_LABELS = ["CONVERGÊNCIAS", "DIVERGÊNCIAS", "DISCERNIMENTO", "DECISÃO RECOMENDADA", "PRÓXIMO PASSO"];
+
+const ADVISOR_FORMAT = "Responda EM PORTUGUÊS, fiel ao seu modo de pensar, em no máximo 5 linhas, EXATAMENTE neste formato (rótulos em maiúsculas):\nVEREDITO: [posicionamento direto em 1 frase]\nRAZÃO: [o porquê, pela sua lente, em 1-2 frases]\nRISCO OCULTO: [o risco que os outros podem não estar vendo]\nAÇÃO: [recomendação prática e executável]\nVOTO: [responda APENAS uma palavra: APROVAR, REPROVAR ou ABSTER]";
+
+const PRESIDENT_FORMAT = "Você recebeu os pareceres e o placar dos 20 conselheiros. Faça a síntese final EM PORTUGUÊS, EXATAMENTE neste formato (rótulos em maiúsculas):\nCONVERGÊNCIAS: [onde o conselho concorda]\nDIVERGÊNCIAS: [os principais conflitos e o que está em jogo]\nDISCERNIMENTO: [a leitura de sabedoria, integridade e propósito sobre a decisão]\nDECISÃO RECOMENDADA: [a palavra final, clara e firme]\nPRÓXIMO PASSO: [o primeiro passo concreto a executar]";
+
+const HISTORY_KEY = "vegas_council_history";
+const APIKEY_KEY = "vegas_council_apikey";
+const MODEL = "claude-sonnet-4-6";
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const BATCH_SIZE = 2;
+const MAX_RETRIES = 3;
+
+function parseSections(text, labels) {
+  if (!text) return null;
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const alt = labels.map(esc).join("|");
+  const re = new RegExp("(" + alt + ")\\s*:?", "gi");
+  const found = []; let m;
+  while ((m = re.exec(text)) !== null) found.push({ raw: m[1], start: m.index, end: re.lastIndex });
+  if (!found.length) return null;
+  const out = {};
+  for (let i = 0; i < found.length; i++) {
+    const next = i + 1 < found.length ? found[i + 1].start : text.length;
+    const seg = text.slice(found[i].end, next).trim();
+    const key = labels.find((l) => l.toLowerCase() === found[i].raw.toLowerCase()) || found[i].raw.toUpperCase();
+    if (seg) out[key] = seg;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+function normalizeVote(v) {
+  if (!v) return "abster";
+  const t = v.trim().toLowerCase();
+  if (t.startsWith("aprov")) return "aprovar";
+  if (t.startsWith("reprov")) return "reprovar";
+  if (t.startsWith("abst")) return "abster";
+  if (/reprov|contra|rejeit|veta/.test(t)) return "reprovar";
+  if (/aprov|favor/.test(t)) return "aprovar";
+  return "abster";
+}
+
+async function callClaudeOnce(apiKey, systemPrompt, userContent) {
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify({
+      model: MODEL, max_tokens: 1000, system: systemPrompt,
+      messages: [{ role: "user", content: userContent }],
+    }),
+  });
+  if (!response.ok) {
+    let detail = "";
+    try { const errBody = await response.json(); detail = errBody && errBody.error && errBody.error.message ? " — " + errBody.error.message : ""; } catch (e) {}
+    throw new Error("HTTP " + response.status + detail);
+  }
+  const data = await response.json();
+  if (data && data.error) throw new Error(data.error.message || "Erro da API");
+  const text = (data.content || []).map((b) => (b.type === "text" ? b.text : "")).filter(Boolean).join("\n").trim();
+  if (!text) throw new Error("Resposta vazia");
+  return text;
+}
+
+async function callClaude(apiKey, systemPrompt, userContent) {
+  let lastErr;
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try { return await callClaudeOnce(apiKey, systemPrompt, userContent); }
+    catch (e) { lastErr = e; await sleep(800 * (attempt + 1) + Math.random() * 600); }
+  }
+  throw lastErr;
+}
+
+async function runInBatches(items, size, worker) {
+  for (let i = 0; i < items.length; i += size) {
+    const slice = items.slice(i, i + size);
+    await Promise.all(slice.map(worker));
+    if (i + size < items.length) await sleep(400);
+  }
+}
+
+const VOTE_META = {
+  aprovar: { label: "Aprovar", color: "#5fae72", glyph: "✓" },
+  reprovar: { label: "Reprovar", color: "#c46b6b", glyph: "✕" },
+  abster: { label: "Abster", color: "#9b958a", glyph: "—" },
+};
+
+function VoteBadge({ vote }) {
+  const mt = VOTE_META[vote] || VOTE_META.abster;
+  return <span className="cn-vote" style={{ color: mt.color, borderColor: mt.color + "66" }}><b>{mt.glyph}</b> {mt.label}</span>;
+}
+function Medallion({ initials }) { return <div className="cn-medallion"><span>{initials}</span></div>; }
+function CrossMedallion() {
+  return <div className="cn-cross"><svg viewBox="0 0 40 40" width="100%" height="100%"><path d="M17 6 h6 v8 h8 v6 h-8 v14 h-6 v-14 h-8 v-6 h8 z" fill="currentColor" /></svg></div>;
+}
+function Shimmer() {
+  return <div className="cn-shimmer"><div className="cn-bar" style={{ width: "90%" }} /><div className="cn-bar" style={{ width: "75%" }} /><div className="cn-bar" style={{ width: "82%" }} /></div>;
+}
+function Sections({ data, raw, labels }) {
+  if (data) return <div className="cn-sections">{labels.map((l) => data[l] ? <div className="cn-section" key={l}><span className="cn-label">{l}</span><p>{data[l]}</p></div> : null)}</div>;
+  return <p className="cn-raw">{raw}</p>;
+}
+function Scoreboard({ placar }) {
+  const total = placar.aprovar + placar.reprovar + placar.abster || 1;
+  const pct = (n) => (n / total) * 100;
+  return (
+    <div className="cn-scoreboard">
+      <div className="cn-score-nums">
+        <div className="cn-score-item" style={{ color: VOTE_META.aprovar.color }}><strong>{placar.aprovar}</strong><span>Aprovar</span></div>
+        <div className="cn-score-item" style={{ color: VOTE_META.reprovar.color }}><strong>{placar.reprovar}</strong><span>Reprovar</span></div>
+        <div className="cn-score-item" style={{ color: VOTE_META.abster.color }}><strong>{placar.abster}</strong><span>Abster</span></div>
+      </div>
+      <div className="cn-score-bar">
+        <div style={{ width: pct(placar.aprovar) + "%", background: VOTE_META.aprovar.color }} />
+        <div style={{ width: pct(placar.reprovar) + "%", background: VOTE_META.reprovar.color }} />
+        <div style={{ width: pct(placar.abster) + "%", background: VOTE_META.abster.color }} />
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [apiKey, setApiKey] = useState("");
+  const [keySaved, setKeySaved] = useState(false);
+  const [view, setView] = useState("deliberar");
+  const [pauta, setPauta] = useState("");
+  const [contexto, setContexto] = useState("");
+  const [opcoes, setOpcoes] = useState("");
+  const [running, setRunning] = useState(false);
+  const [responses, setResponses] = useState({});
+  const [president, setPresident] = useState(null);
+  const [convened, setConvened] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [currentId, setCurrentId] = useState(null);
+  const [savedNote, setSavedNote] = useState("");
+
+  useEffect(() => {
+    try {
+      const h = localStorage.getItem(HISTORY_KEY);
+      if (h) setHistory(JSON.parse(h));
+      const k = localStorage.getItem(APIKEY_KEY);
+      if (k) { setApiKey(k); setKeySaved(true); }
+    } catch (e) {}
+  }, []);
+
+  const persist = (arr) => { try { localStorage.setItem(HISTORY_KEY, JSON.stringify(arr)); } catch (e) {} };
+  const saveKey = () => { try { localStorage.setItem(APIKEY_KEY, apiKey.trim()); setKeySaved(true); } catch (e) {} };
+  const clearKey = () => { try { localStorage.removeItem(APIKEY_KEY); } catch (e) {} setApiKey(""); setKeySaved(false); };
+
+  const placar = { aprovar: 0, reprovar: 0, abster: 0 };
+  Object.values(responses).forEach((r) => { if (r.status === "done") placar[r.vote || "abster"]++; });
+
+  const buildPautaBlock = () => {
+    let b = "PAUTA (decisão de Juliano): " + pauta.trim();
+    if (contexto.trim()) b += "\n\nCONTEXTO: " + contexto.trim();
+    if (opcoes.trim()) b += "\n\nOPÇÕES EM ANÁLISE: " + opcoes.trim();
+    return b;
+  };
+
+  const queryAdvisor = async (a, userContent, collected) => {
+    setResponses((prev) => ({ ...prev, [a.id]: { status: "loading" } }));
+    try {
+      const text = await callClaude(apiKey, a.prompt, userContent);
+      const parsed = parseSections(text, ADVISOR_LABELS);
+      const vote = normalizeVote(parsed && parsed.VOTO);
+      collected[a.id] = { text, vote };
+      setResponses((prev) => ({ ...prev, [a.id]: { status: "done", text, vote } }));
+    } catch (e) {
+      collected[a.id] = { text: "", vote: "abster" };
+      const msg = (e && e.message) ? e.message : "erro desconhecido";
+      setResponses((prev) => ({ ...prev, [a.id]: { status: "error", text: "Falha: " + msg, vote: "abster" } }));
+    }
+  };
+
+  const runPresident = async (collected) => {
+    const tally = { aprovar: 0, reprovar: 0, abster: 0 };
+    ADVISORS.forEach((a) => { tally[(collected[a.id] && collected[a.id].vote) || "abster"]++; });
+    setPresident({ status: "loading" });
+    const pareceres = ADVISORS.map((a) => "### " + a.name + " (" + a.seat + ") — VOTO: " + (((collected[a.id] && collected[a.id].vote) || "abster").toUpperCase()) + "\n" + ((collected[a.id] && collected[a.id].text) || "[sem parecer]")).join("\n\n");
+    const placarTxt = "PLACAR: " + tally.aprovar + " aprovam, " + tally.reprovar + " reprovam, " + tally.abster + " se abstêm.";
+    const presidentInput = buildPautaBlock() + "\n\n" + placarTxt + "\n\nPARECERES DO CONSELHO:\n\n" + pareceres + "\n\n" + PRESIDENT_FORMAT;
+    let ptext = ""; let pStatus = "done";
+    try { ptext = await callClaude(apiKey, PRESIDENT.prompt, presidentInput); }
+    catch (e) { pStatus = "error"; ptext = "Falha ao gerar a síntese da presidência."; }
+    setPresident({ status: pStatus, text: ptext });
+    if (pStatus === "done") {
+      const record = {
+        id: Date.now().toString(), createdAt: new Date().toISOString(),
+        pauta: pauta.trim(), contexto: contexto.trim(), opcoes: opcoes.trim(),
+        advisors: ADVISORS.map((a) => ({ id: a.id, name: a.name, seat: a.seat, initials: a.initials, text: (collected[a.id] && collected[a.id].text) || "", vote: (collected[a.id] && collected[a.id].vote) || "abster" })),
+        president: ptext, placar: tally,
+      };
+      const newHist = [record, ...history].slice(0, 60);
+      setHistory(newHist); setCurrentId(record.id); persist(newHist);
+      setSavedNote("Ata salva no histórico");
+    }
+  };
+
+  const convene = async () => {
+    if (!pauta.trim() || running || !apiKey.trim()) return;
+    setRunning(true); setConvened(true); setPresident(null); setSavedNote(""); setCurrentId(null);
+    const initial = {}; ADVISORS.forEach((a) => (initial[a.id] = { status: "loading" })); setResponses(initial);
+    const userContent = buildPautaBlock() + "\n\n" + ADVISOR_FORMAT;
+    const collected = {};
+    await runInBatches(ADVISORS, BATCH_SIZE, (a) => queryAdvisor(a, userContent, collected));
+    await runPresident(collected);
+    setRunning(false);
+  };
+
+  const retryFailed = async () => {
+    if (running) return;
+    const failed = ADVISORS.filter((a) => responses[a.id] && responses[a.id].status === "error");
+    if (!failed.length) return;
+    setRunning(true); setSavedNote("");
+    const collected = {};
+    ADVISORS.forEach((a) => { const r = responses[a.id]; if (r && r.status === "done") collected[a.id] = { text: r.text, vote: r.vote }; });
+    const userContent = buildPautaBlock() + "\n\n" + ADVISOR_FORMAT;
+    await runInBatches(failed, BATCH_SIZE, (a) => queryAdvisor(a, userContent, collected));
+    await runPresident(collected);
+    setRunning(false);
+  };
+
+  const failedCount = ADVISORS.filter((a) => responses[a.id] && responses[a.id].status === "error").length;
+
+  const loadDeliberation = (rec) => {
+    setPauta(rec.pauta || ""); setContexto(rec.contexto || ""); setOpcoes(rec.opcoes || "");
+    const resp = {}; (rec.advisors || []).forEach((a) => { resp[a.id] = { status: "done", text: a.text, vote: a.vote }; });
+    setResponses(resp); setPresident({ status: "done", text: rec.president });
+    setConvened(true); setCurrentId(rec.id); setSavedNote(""); setView("deliberar");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const deleteDeliberation = (id) => {
+    if (!window.confirm("Excluir esta deliberação do histórico? Esta ação não pode ser desfeita.")) return;
+    const arr = history.filter((h) => h.id !== id); setHistory(arr); persist(arr);
+    if (currentId === id) setCurrentId(null);
+  };
+  const reset = () => { setPauta(""); setContexto(""); setOpcoes(""); setResponses({}); setPresident(null); setConvened(false); setCurrentId(null); setSavedNote(""); };
+  const exportPDF = () => { window.print(); };
+  const presidentDone = president && president.status === "done";
+
+  return (
+    <div className="cn-root">
+      <div className="cn-app">
+        <header className="cn-header">
+          <div className="cn-rule" />
+          <h1 className="cn-title">CONSELHO DOS NOTÁVEIS</h1>
+          <p className="cn-subtitle">Vinte mentes da história · presidido por Jesus Cristo</p>
+          <div className="cn-rule" />
+        </header>
+
+        <section className="cn-keybar">
+          {!keySaved ? (
+            <div className="cn-key-row">
+              <input className="cn-input cn-key-input" type="password" placeholder="Cole sua chave da API Anthropic (sk-ant-...)" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
+              <button className="cn-btn cn-btn-sm" onClick={saveKey} disabled={!apiKey.trim()}>Salvar chave</button>
+            </div>
+          ) : (
+            <div className="cn-key-row">
+              <span className="cn-key-ok">✓ Chave configurada neste navegador</span>
+              <button className="cn-btn cn-btn-sm cn-btn-ghost" onClick={clearKey}>Trocar chave</button>
+            </div>
+          )}
+        </section>
+
+        <nav className="cn-nav">
+          <button className={view === "deliberar" ? "cn-tab cn-tab-on" : "cn-tab"} onClick={() => setView("deliberar")}>Deliberar</button>
+          <button className={view === "historico" ? "cn-tab cn-tab-on" : "cn-tab"} onClick={() => setView("historico")}>Histórico {history.length > 0 && <span className="cn-count">{history.length}</span>}</button>
+        </nav>
+
+        {view === "deliberar" && (
+          <React.Fragment>
+            <section className="cn-panel">
+              <label className="cn-field-label">A decisão / pauta</label>
+              <textarea className="cn-input" rows={2} placeholder="Ex.: Devo comprar o veículo no Paraguai sob admissão temporária Mercosul agora ou aguardar a estrutura de dupla domiciliação?" value={pauta} onChange={(e) => setPauta(e.target.value)} />
+              <div className="cn-grid2">
+                <div>
+                  <label className="cn-field-label">Contexto (números, prazo, situação)</label>
+                  <textarea className="cn-input" rows={2} placeholder="Ex.: caixa disponível, prazo, riscos legais conhecidos..." value={contexto} onChange={(e) => setContexto(e.target.value)} />
+                </div>
+                <div>
+                  <label className="cn-field-label">Opções (se houver)</label>
+                  <textarea className="cn-input" rows={2} placeholder="Ex.: A) comprar já  B) aguardar  C) financiar" value={opcoes} onChange={(e) => setOpcoes(e.target.value)} />
+                </div>
+              </div>
+              <div className="cn-actions">
+                <button className="cn-btn" onClick={convene} disabled={running || !pauta.trim() || !apiKey.trim()}>{running ? "Conselho deliberando…" : "Convocar o Conselho"}</button>
+                {convened && !running && <button className="cn-btn cn-btn-ghost" onClick={reset}>Nova pauta</button>}
+                {!running && failedCount > 0 && <button className="cn-btn cn-btn-ghost" onClick={retryFailed}>Reconvocar os que falharam ({failedCount})</button>}
+                {presidentDone && !running && <button className="cn-btn cn-btn-ghost" onClick={exportPDF}>Exportar ata (PDF)</button>}
+                {savedNote && <span className="cn-saved">✓ {savedNote}</span>}
+                {!apiKey.trim() && <span className="cn-warn">Configure a chave da API acima para convocar.</span>}
+              </div>
+            </section>
+
+            {convened && (
+              <React.Fragment>
+                {(presidentDone || Object.values(responses).some((r) => r.status === "done")) && <Scoreboard placar={placar} />}
+                <div className="cn-section-title"><span>OS VINTE CONSELHEIROS</span></div>
+                <div className="cn-council">
+                  {ADVISORS.map((a) => {
+                    const r = responses[a.id] || { status: "idle" };
+                    const parsed = r.status === "done" ? parseSections(r.text, ADVISOR_LABELS) : null;
+                    return (
+                      <article key={a.id} className={"cn-card " + (r.status === "done" ? "cn-card-done" : "")}>
+                        <div className="cn-card-head">
+                          <Medallion initials={a.initials} />
+                          <div className="cn-card-id"><h3>{a.name}</h3><span className="cn-seat">{a.seat}</span></div>
+                          {r.status === "done" && <VoteBadge vote={r.vote} />}
+                        </div>
+                        <div className="cn-card-body">
+                          {r.status === "loading" && <Shimmer />}
+                          {r.status === "error" && <p className="cn-error">{r.text}</p>}
+                          {r.status === "done" && <Sections data={parsed} raw={r.text} labels={ADVISOR_DISPLAY} />}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+                {president && (
+                  <div className="cn-president">
+                    <div className="cn-president-head">
+                      <CrossMedallion />
+                      <div>
+                        <span className="cn-pres-tag">PRESIDENTE DO CONSELHO</span>
+                        <h2>{PRESIDENT.name}</h2>
+                        <span className="cn-seat cn-seat-light">Discernimento e síntese final</span>
+                      </div>
+                    </div>
+                    <div className="cn-president-body">
+                      {president.status === "loading" && <p className="cn-deliberating">Ouvindo o conselho e ponderando…</p>}
+                      {president.status === "error" && <p className="cn-error">{president.text}</p>}
+                      {president.status === "done" && <Sections data={parseSections(president.text, PRESIDENT_LABELS)} raw={president.text} labels={PRESIDENT_LABELS} />}
+                    </div>
+                  </div>
+                )}
+              </React.Fragment>
+            )}
+          </React.Fragment>
+        )}
+
+        {view === "historico" && (
+          <section className="cn-history">
+            {history.length === 0 && <p className="cn-empty">Nenhuma deliberação salva ainda. Convoque o conselho para começar.</p>}
+            {history.map((h) => (
+              <article key={h.id} className="cn-hist-item">
+                <div className="cn-hist-main"><p className="cn-hist-pauta">{h.pauta}</p><span className="cn-hist-date">{new Date(h.createdAt).toLocaleString("pt-BR")}</span></div>
+                <div className="cn-hist-placar">
+                  <span style={{ color: VOTE_META.aprovar.color }}>▲ {h.placar.aprovar}</span>
+                  <span style={{ color: VOTE_META.reprovar.color }}>▼ {h.placar.reprovar}</span>
+                  <span style={{ color: VOTE_META.abster.color }}>— {h.placar.abster}</span>
+                </div>
+                <div className="cn-hist-btns">
+                  <button className="cn-btn cn-btn-sm" onClick={() => loadDeliberation(h)}>Abrir</button>
+                  <button className="cn-btn cn-btn-sm cn-btn-danger" onClick={() => deleteDeliberation(h.id)}>Excluir</button>
+                </div>
+              </article>
+            ))}
+          </section>
+        )}
+
+        <footer className="cn-footer">Conselho consultivo · agentes de IA · uso pessoal de Juliano</footer>
+      </div>
+
+      {presidentDone && (
+        <div id="cn-print-area">
+          <h1>ATA DE DELIBERAÇÃO</h1>
+          <h2 className="p-sub">Conselho dos Notáveis · Presidência: Jesus Cristo</h2>
+          <p className="p-date">{new Date().toLocaleString("pt-BR")}</p>
+          <hr />
+          <h3>Pauta</h3><p>{pauta}</p>
+          {contexto && <React.Fragment><h3>Contexto</h3><p>{contexto}</p></React.Fragment>}
+          {opcoes && <React.Fragment><h3>Opções</h3><p>{opcoes}</p></React.Fragment>}
+          <h3>Placar do Conselho</h3>
+          <p><strong>Aprovar:</strong> {placar.aprovar} · <strong>Reprovar:</strong> {placar.reprovar} · <strong>Abster:</strong> {placar.abster}</p>
+          <hr /><h3>Pareceres dos Conselheiros</h3>
+          {ADVISORS.map((a) => { const r = responses[a.id]; if (!r || r.status !== "done") return null;
+            return <div className="p-advisor" key={a.id}><h4>{a.name} — {a.seat} <span className="p-vote">[{(r.vote || "abster").toUpperCase()}]</span></h4><p className="p-text">{r.text}</p></div>; })}
+          <hr /><h3>Síntese da Presidência — Jesus Cristo</h3><p className="p-text">{president.text}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+
+<style>
+.cn-root {
+  --gold:#c9a24b;--gold-bright:#e6c878;--gold-soft:rgba(201,162,75,0.35);--ink:#ece7dc;--ink-dim:#9b958a;--line:rgba(201,162,75,0.22);
+  font-family:'Outfit',sans-serif;color:var(--ink);
+  background:radial-gradient(120% 80% at 50% -10%,rgba(201,162,75,0.10),transparent 55%),radial-gradient(80% 60% at 100% 100%,rgba(201,162,75,0.05),transparent 50%),linear-gradient(180deg,#0c0c0f 0%,#0a0a0d 100%);
+  min-height:100vh;padding:40px clamp(16px,4vw,56px) 60px;position:relative;
+}
+.cn-header{text-align:center;margin-bottom:18px;}
+.cn-rule{height:1px;width:min(560px,80%);margin:0 auto;background:linear-gradient(90deg,transparent,var(--gold),transparent);}
+.cn-title{font-family:'Cinzel',serif;font-weight:700;font-size:clamp(26px,5vw,46px);letter-spacing:0.14em;margin:18px 0 8px;text-shadow:0 2px 30px rgba(201,162,75,0.25);}
+.cn-subtitle{font-family:'Cormorant Garamond',serif;font-style:italic;font-size:clamp(15px,2.4vw,20px);color:var(--gold-bright);margin:0 0 14px;}
+.cn-keybar{max-width:940px;margin:0 auto 18px;}
+.cn-key-row{display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap;}
+.cn-key-input{max-width:480px;}
+.cn-key-ok{color:var(--gold-bright);font-size:13px;font-style:italic;}
+.cn-nav{display:flex;justify-content:center;gap:8px;margin-bottom:30px;}
+.cn-tab{font-family:'Cinzel',serif;font-size:13px;letter-spacing:0.08em;padding:9px 22px;border-radius:8px;cursor:pointer;background:transparent;color:var(--ink-dim);border:1px solid var(--line);transition:all 0.2s;}
+.cn-tab-on{color:#0c0c0f;background:linear-gradient(180deg,var(--gold-bright),var(--gold));border-color:transparent;}
+.cn-count{display:inline-block;margin-left:6px;background:rgba(0,0,0,0.25);border-radius:10px;padding:0 7px;font-size:11px;}
+.cn-panel{max-width:940px;margin:0 auto 30px;background:linear-gradient(180deg,rgba(22,22,29,0.9),rgba(16,16,22,0.9));border:1px solid var(--line);border-radius:14px;padding:clamp(18px,3vw,30px);box-shadow:0 20px 60px rgba(0,0,0,0.5);}
+.cn-field-label{display:block;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:var(--gold);margin:4px 0 7px;font-weight:500;}
+.cn-grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px;}
+@media(max-width:640px){.cn-grid2{grid-template-columns:1fr;}}
+.cn-input{width:100%;box-sizing:border-box;resize:vertical;background:rgba(8,8,11,0.7);border:1px solid rgba(201,162,75,0.18);border-radius:9px;color:var(--ink);padding:12px 14px;font-family:'Outfit',sans-serif;font-size:14.5px;line-height:1.5;transition:border-color 0.2s,box-shadow 0.2s;}
+.cn-input::placeholder{color:#5f5b53;}
+.cn-input:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(201,162,75,0.12);}
+.cn-actions{display:flex;gap:12px;margin-top:20px;flex-wrap:wrap;align-items:center;}
+.cn-btn{font-family:'Cinzel',serif;font-weight:600;letter-spacing:0.08em;font-size:14px;padding:13px 28px;border-radius:9px;cursor:pointer;color:#0c0c0f;border:none;background:linear-gradient(180deg,var(--gold-bright),var(--gold));box-shadow:0 8px 24px rgba(201,162,75,0.28);transition:transform 0.15s,box-shadow 0.2s,opacity 0.2s;}
+.cn-btn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 12px 30px rgba(201,162,75,0.4);}
+.cn-btn:disabled{opacity:0.5;cursor:not-allowed;}
+.cn-btn-ghost{background:transparent;color:var(--gold);border:1px solid var(--gold-soft);box-shadow:none;}
+.cn-btn-sm{padding:8px 16px;font-size:12px;}
+.cn-btn-danger{color:#c46b6b;border-color:rgba(196,107,107,0.4);background:transparent;box-shadow:none;}
+.cn-saved{color:var(--gold-bright);font-size:13px;font-style:italic;}
+.cn-warn{color:#c98b8b;font-size:13px;font-style:italic;}
+.cn-scoreboard{max-width:940px;margin:0 auto 30px;background:linear-gradient(180deg,rgba(22,22,29,0.85),rgba(16,16,22,0.85));border:1px solid var(--line);border-radius:13px;padding:20px 26px;}
+.cn-score-nums{display:flex;justify-content:center;gap:48px;margin-bottom:16px;}
+.cn-score-item{text-align:center;display:flex;flex-direction:column;}
+.cn-score-item strong{font-family:'Cinzel',serif;font-size:30px;line-height:1;}
+.cn-score-item span{font-size:11px;letter-spacing:0.12em;text-transform:uppercase;margin-top:4px;}
+.cn-score-bar{display:flex;height:10px;border-radius:6px;overflow:hidden;background:rgba(0,0,0,0.4);}
+.cn-score-bar div{transition:width 0.5s ease;}
+.cn-section-title{text-align:center;margin:6px 0 26px;}
+.cn-section-title span{font-family:'Cinzel',serif;letter-spacing:0.22em;font-size:13px;color:var(--gold);position:relative;padding:0 18px;}
+.cn-section-title span::before,.cn-section-title span::after{content:"";position:absolute;top:50%;width:60px;height:1px;background:linear-gradient(90deg,transparent,var(--gold-soft));}
+.cn-section-title span::before{right:100%;transform:scaleX(-1);}
+.cn-section-title span::after{left:100%;}
+.cn-council{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:18px;max-width:1180px;margin:0 auto;}
+.cn-card{background:linear-gradient(180deg,rgba(23,23,30,0.92),rgba(15,15,20,0.92));border:1px solid var(--line);border-radius:13px;padding:18px 18px 20px;box-shadow:0 12px 36px rgba(0,0,0,0.4);position:relative;overflow:hidden;animation:cn-rise 0.5s ease both;}
+.cn-card-done{border-color:rgba(201,162,75,0.4);}
+@keyframes cn-rise{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:none;}}
+.cn-card-head{display:flex;align-items:center;gap:13px;margin-bottom:14px;padding-bottom:13px;border-bottom:1px solid rgba(201,162,75,0.14);}
+.cn-card-id{flex:1;min-width:0;}
+.cn-card-head h3{font-family:'Cormorant Garamond',serif;font-weight:600;font-size:21px;margin:0;line-height:1.1;}
+.cn-seat{font-size:11px;letter-spacing:0.06em;color:var(--gold);text-transform:uppercase;}
+.cn-seat-light{color:var(--gold-bright);}
+.cn-vote{font-size:10.5px;font-weight:600;letter-spacing:0.04em;border:1px solid;border-radius:20px;padding:3px 9px;white-space:nowrap;}
+.cn-vote b{font-weight:700;}
+.cn-medallion{width:46px;height:46px;flex:0 0 46px;border-radius:50%;display:grid;place-items:center;font-family:'Cinzel',serif;font-weight:700;font-size:15px;color:var(--gold-bright);background:radial-gradient(circle at 30% 25%,rgba(201,162,75,0.25),rgba(12,12,15,0.9));border:1.5px solid var(--gold-soft);box-shadow:inset 0 0 12px rgba(201,162,75,0.2);}
+.cn-sections{display:flex;flex-direction:column;gap:11px;}
+.cn-section .cn-label{font-size:10px;letter-spacing:0.16em;color:var(--gold);font-weight:600;display:block;margin-bottom:2px;}
+.cn-section p{margin:0;font-size:14px;line-height:1.5;}
+.cn-raw{white-space:pre-wrap;font-size:14px;line-height:1.55;margin:0;}
+.cn-error{color:#c98b8b;font-size:13.5px;font-style:italic;margin:0;}
+.cn-shimmer{display:flex;flex-direction:column;gap:9px;padding:4px 0;}
+.cn-bar{height:11px;border-radius:6px;background:linear-gradient(90deg,rgba(201,162,75,0.06),rgba(201,162,75,0.18),rgba(201,162,75,0.06));background-size:200% 100%;animation:cn-glow 1.4s ease-in-out infinite;}
+@keyframes cn-glow{0%{background-position:200% 0;}100%{background-position:-200% 0;}}
+.cn-president{max-width:920px;margin:44px auto 0;background:radial-gradient(90% 120% at 50% -20%,rgba(230,200,120,0.16),transparent 60%),linear-gradient(180deg,rgba(26,24,20,0.95),rgba(14,13,11,0.95));border:1px solid rgba(201,162,75,0.5);border-radius:16px;padding:clamp(20px,4vw,38px);box-shadow:0 24px 70px rgba(0,0,0,0.6),0 0 60px rgba(201,162,75,0.12);animation:cn-rise 0.6s ease both;}
+.cn-president-head{display:flex;align-items:center;gap:18px;margin-bottom:20px;padding-bottom:18px;border-bottom:1px solid rgba(201,162,75,0.25);}
+.cn-president-head h2{font-family:'Cinzel',serif;font-size:clamp(22px,4vw,30px);margin:3px 0 2px;color:var(--gold-bright);letter-spacing:0.04em;}
+.cn-pres-tag{font-size:11px;letter-spacing:0.24em;color:var(--gold);font-weight:600;}
+.cn-cross{width:64px;height:64px;flex:0 0 64px;border-radius:50%;display:grid;place-items:center;color:var(--gold-bright);background:radial-gradient(circle at 50% 35%,rgba(230,200,120,0.35),rgba(12,12,15,0.9));border:1.5px solid var(--gold);padding:14px;box-sizing:border-box;box-shadow:inset 0 0 20px rgba(201,162,75,0.35),0 0 24px rgba(201,162,75,0.25);}
+.cn-president-body .cn-section p{font-size:15px;}
+.cn-president-body .cn-label{color:var(--gold-bright);}
+.cn-deliberating{font-family:'Cormorant Garamond',serif;font-style:italic;font-size:18px;color:var(--gold-bright);}
+.cn-history{max-width:940px;margin:0 auto;display:flex;flex-direction:column;gap:12px;}
+.cn-empty{text-align:center;color:var(--ink-dim);font-style:italic;padding:40px 0;}
+.cn-hist-item{display:flex;align-items:center;gap:16px;background:linear-gradient(180deg,rgba(22,22,29,0.85),rgba(16,16,22,0.85));border:1px solid var(--line);border-radius:11px;padding:16px 18px;flex-wrap:wrap;}
+.cn-hist-main{flex:1;min-width:200px;}
+.cn-hist-pauta{margin:0 0 4px;font-size:15px;font-weight:500;}
+.cn-hist-date{font-size:11.5px;color:var(--ink-dim);letter-spacing:0.04em;}
+.cn-hist-placar{display:flex;gap:14px;font-size:13px;font-weight:600;font-family:'Cinzel',serif;}
+.cn-hist-btns{display:flex;gap:8px;}
+.cn-footer{text-align:center;margin-top:50px;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:var(--ink-dim);}
+#cn-print-area{display:none;}
+@media print{
+  .cn-app{display:none !important;}
+  .cn-root{background:#fff !important;padding:0 !important;}
+  #cn-print-area{display:block !important;color:#1a1a1a;font-family:Georgia,'Times New Roman',serif;padding:28px 36px;max-width:720px;margin:0 auto;}
+  #cn-print-area h1{font-size:24px;text-align:center;letter-spacing:0.08em;margin:0 0 2px;}
+  #cn-print-area .p-sub{font-size:13px;text-align:center;font-style:italic;color:#555;margin:0 0 4px;font-weight:normal;}
+  #cn-print-area .p-date{text-align:center;font-size:11px;color:#777;margin:0 0 14px;}
+  #cn-print-area h3{font-size:14px;letter-spacing:0.06em;text-transform:uppercase;border-bottom:1px solid #ccc;padding-bottom:3px;margin:18px 0 8px;color:#8a6d2f;}
+  #cn-print-area h4{font-size:13.5px;margin:12px 0 3px;}
+  #cn-print-area .p-vote{font-size:11px;color:#8a6d2f;font-weight:normal;}
+  #cn-print-area p{font-size:12.5px;line-height:1.5;margin:0 0 8px;}
+  #cn-print-area .p-text{white-space:pre-wrap;}
+  #cn-print-area .p-advisor{page-break-inside:avoid;margin-bottom:6px;}
+  #cn-print-area hr{border:none;border-top:1px solid #ccc;margin:16px 0;}
+}
+</style>
+</body>
+</html>
